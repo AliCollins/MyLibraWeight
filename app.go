@@ -69,15 +69,15 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	token, err := t.Exchange(code)
 	if err != nil {
 		c.Errorf("%v", err)
+	} else {
+		// Log the token
+		c.Infof("Token: %s", token)
 	}
 
 	// Now get user data based on the Transport which has the token.
 	resp, _ := t.Client().Get(profileInfoURL)
 	buf := make([]byte, 1024)
 	resp.Body.Read(buf)
-
-	// Log the token.
-	c.Infof("Token: %s", token)
 
 	// Render the user's information.
 	err = cached_templates.ExecuteTemplate(w, "userInfo.html", string(buf))
