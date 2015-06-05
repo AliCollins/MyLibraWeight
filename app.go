@@ -3,7 +3,7 @@ package mylibraweight
 import (
 	"appengine"
 	"appengine/urlfetch"
-	// "fmt"
+	"fmt"
 	// "golang.org/x/oauth2"
 	// "golang.org/x/oauth2/google"
 	"code.google.com/p/goauth2/oauth"
@@ -71,11 +71,11 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 		c.Errorf("%v", err)
 	} else {
 		// Log the token
-		c.Infof("Token: %s", token)
+		c.Infof("Token: %s", token.AccessToken)
 	}
 
 	// Now get user data based on the Transport which has the token.
-	resp, _ := t.Client().Get(profileInfoURL)
+	resp, _ := t.Client().Get(fmt.Sprint(profileInfoURL, "&access_token=", token.AccessToken))
 	buf := make([]byte, 1024)
 	resp.Body.Read(buf)
 
