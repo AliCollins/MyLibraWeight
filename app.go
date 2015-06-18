@@ -1,6 +1,7 @@
 package mylibraweight
 
 import (
+	// "fmt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v2"
@@ -8,8 +9,8 @@ import (
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/log"
 	"html/template"
-
 	"net/http"
+	// "strings"
 )
 
 // Cache all of the HTML files in the templates directory so that we only have to hit disk once.
@@ -114,9 +115,23 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	// log.Infof(c, "Files: %v", dc.Files.List().Do())
 	files, err := dc.Files.List().Q("title contains 'Libra Database:'").Do()
-	for _, value := range files.Items {
+	filenames := make([]string, len(files.Items))
+	for i, value := range files.Items {
 		// log.Infof(c, "Files [%v]: %v", key, value.OriginalFilename)
 		log.Infof(c, "Files: %v", value.Title)
+		// filenames[i] = fmt.Sprintf("<option>%v</option>\n", value.Title)
+		filenames[i] = value.Title
 	}
 
+	data := struct {
+		DisplayName string
+		LibraFiles  []string
+	}{
+		DisplayName: person.DisplayName,
+		// LibraFiles:  strings.Join(filenames, ""),
+		LibraFiles: filenames,
+	}
+
+	// Render the user's information.
+	err = cached_templates.ExecuteTemplate(w, "userInfo.html", data)
 }

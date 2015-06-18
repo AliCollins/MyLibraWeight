@@ -1,9 +1,15 @@
 <html>
 
 	<body>
-		This app is now authenticated to access your Google user info.  Your details are:
+		This app is now authenticated to access your Google user info.  Your name is: {{.DisplayName}}
 		<br />
-		{{.}}
+		Files:
+		<select name="libraFiles">
+			{{range .LibraFiles}}
+				<option>{{.}}</option>
+			{{end}}
+		</select>
+		<input type="submit" value="Process file...">
 	</body>
 
 </html>
