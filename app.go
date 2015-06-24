@@ -10,12 +10,18 @@ import (
 	"google.golang.org/appengine/log"
 	"html/template"
 	"net/http"
-	// "strings"
 )
 
 // Cache all of the HTML files in the templates directory so that we only have to hit disk once.
 var cached_templates = template.Must(template.ParseGlob("templates/*.html"))
 
+// struct user {
+// 	Name	string,
+// 	Email	string,
+// 	token	string,
+// }
+
+// App Engine instance
 var conf = &oauth2.Config{
 	ClientID:     "285312328170-a54o8ukf7lmlan610vfh1cr4iq4boemp.apps.googleusercontent.com", // from https://console.developers.google.com/project/<your-project-id>/apiui/credential
 	ClientSecret: "IAFj6KxoAyYRKGYHiPK4I88Z",
@@ -24,10 +30,12 @@ var conf = &oauth2.Config{
 	Scopes: []string{
 		"https://www.googleapis.com/auth/drive",
 		"https://www.googleapis.com/auth/userinfo.profile",
+		"https://www.googleapis.com/auth/userinfo.email",
 	},
 	Endpoint: google.Endpoint,
 }
 
+// // Debugging on local instance
 // var conf = &oauth2.Config{
 // 	ClientID:     "285312328170-7dvm2p1sa9tnfpfblopuk4eqp0r80jvl.apps.googleusercontent.com", // from https://console.developers.google.com/project/<your-project-id>/apiui/credential
 // 	ClientSecret: "-qW7bzzoddgeXOIo-G-4H_4K",
@@ -35,7 +43,8 @@ var conf = &oauth2.Config{
 // 	// RedirectURL: "http://localhost:10080/oauth2callback",
 // 	Scopes: []string{
 // 		"https://www.googleapis.com/auth/drive",
-// 		"profile",
+// 		"https://www.googleapis.com/auth/userinfo.profile",
+// 		"https://www.googleapis.com/auth/userinfo.email",
 // 	},
 // 	Endpoint: google.Endpoint,
 // }
@@ -64,24 +73,24 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 //
 func handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Initialize an appengine context.
-	c := appengine.NewContext(r)
-	log.Infof(c, "In handleAuthorize")
+	// c := appengine.NewContext(r)
+	// log.Infof(c, "In handleAuthorize")
 
 	// Get the Google URL which shows the Authentication page to the user.
 	// url := conf.AuthCodeURL("state")
 	url := conf.AuthCodeURL("")
-	log.Infof(c, "Visit the URL for the auth dialog: %v", url)
+	// log.Infof(c, "Visit the URL for the auth dialog: %v", url)
 
 	// Redirect user to that page.
 	http.Redirect(w, r, url, http.StatusFound)
-	log.Infof(c, "Leaving handleAuthorize")
+	// log.Infof(c, "Leaving handleAuthorize")
 }
 
 //
 func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	// Initialize an appengine context.
 	c := appengine.NewContext(r)
-	log.Infof(c, "In handleOAuth2Callback")
+	// log.Infof(c, "In handleOAuth2Callback")
 
 	// log.Infof(c, "r: %v", r)
 	code := r.FormValue("code")
@@ -107,6 +116,15 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 		log.Errorf(c, "Person Error: %v", err)
 	}
 	log.Infof(c, "Name: %v", person.DisplayName)
+	log.Infof(c, "All Person information: %v", person)
+	email := ""
+	for _, e := range person.Emails {
+		log.Infof(c, "Emails: [%v] %v", e.Type, e.Value)
+		if e.Type == "account" {
+			email = e.Value
+		}
+	}
+	log.Infof(c, "Email: %v", email)
 
 	// DRIVE CLIENT
 	dc, err := drive.New(client)
@@ -117,19 +135,17 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	files, err := dc.Files.List().Q("title contains 'Libra Database:'").Do()
 	filenames := make([]string, len(files.Items))
 	for i, value := range files.Items {
-		// log.Infof(c, "Files [%v]: %v", key, value.OriginalFilename)
-		log.Infof(c, "Files: %v", value.Title)
-		// filenames[i] = fmt.Sprintf("<option>%v</option>\n", value.Title)
+		// log.Infof(c, "Files: %v", value.Title)
 		filenames[i] = value.Title
 	}
+	// file := files.Items[0]
 
 	data := struct {
 		DisplayName string
 		LibraFiles  []string
 	}{
 		DisplayName: person.DisplayName,
-		// LibraFiles:  strings.Join(filenames, ""),
-		LibraFiles: filenames,
+		LibraFiles:  filenames,
 	}
 
 	// Render the user's information.
