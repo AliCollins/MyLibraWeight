@@ -1,15 +1,18 @@
 <html>
+	<head>
+		<title>myLibraWeight - Not Authenticated</title>
+		{{template "_script_header"}}
+	</head>
 
 	<body>
+		{{template "_navigation"}}
+		<div class="container">
+			<p>You have currently not given permissions to access your data. Please authenticate this app with the Google OAuth provider.</p>
 		
-		You have currently not given permissions to access your data. Please authenticate this app with the Google OAuth provider.
-		
-		<br />
-		
-		<form action="/authorize" method="POST">
-			<input type="submit" value="Ok, authorize this app with my Google id" />
-		</form>
-
+			<form action="/authorize" method="POST">
+				<input type="submit" value="Ok, authorize this app with my Google id" />
+			</form>
+		</div>
 	</body>
 
 </html>

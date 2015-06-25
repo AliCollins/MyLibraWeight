@@ -44,7 +44,6 @@ var conf = &oauth2.Config{
 	ClientID:     "285312328170-a54o8ukf7lmlan610vfh1cr4iq4boemp.apps.googleusercontent.com", // from https://console.developers.google.com/project/<your-project-id>/apiui/credential
 	ClientSecret: "IAFj6KxoAyYRKGYHiPK4I88Z",
 	RedirectURL:  "http://mylibraweight.appspot.com/oauth2callback",
-	// RedirectURL: "http://localhost:10080/oauth2callback",
 	Scopes: []string{
 		"https://www.googleapis.com/auth/drive",
 		"https://www.googleapis.com/auth/userinfo.profile",
@@ -58,7 +57,6 @@ var conf = &oauth2.Config{
 // 	ClientID:     "285312328170-7dvm2p1sa9tnfpfblopuk4eqp0r80jvl.apps.googleusercontent.com", // from https://console.developers.google.com/project/<your-project-id>/apiui/credential
 // 	ClientSecret: "-qW7bzzoddgeXOIo-G-4H_4K",
 // 	RedirectURL:  "http://localhost:10080/oauth2callback",
-// 	// RedirectURL: "http://localhost:10080/oauth2callback",
 // 	Scopes: []string{
 // 		"https://www.googleapis.com/auth/drive",
 // 		"https://www.googleapis.com/auth/userinfo.profile",
@@ -76,6 +74,8 @@ func init() {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/authorize", handleAuthorize)
 	http.HandleFunc("/oauth2callback", handleOAuth2Callback)
+	http.HandleFunc("/about", handleAbout)
+	http.HandleFunc("/contact", handleContact)
 }
 
 //
@@ -165,57 +165,66 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Errorf(c, "An error occurred creating Drive client: %v", err)
 	}
+
+	var filenames []string
+	var graphData template.JS
+
 	// log.Infof(c, "Files: %v", dc.Files.List().Do())
 	files, err := dc.Files.List().Q("title contains 'Libra Database:'").Do()
-	filenames := make([]string, len(files.Items))
-	for i, value := range files.Items {
-		// log.Infof(c, "Files: %v", value.Title)
-		filenames[i] = value.Title
-		// filenames[i] = fmt.Sprint(value.Title, value.FileExtension)
-	}
+	if len(files.Items) > 0 {
+		filenames = make([]string, len(files.Items))
+		for i, value := range files.Items {
+			// log.Infof(c, "Files: %v", value.Title)
+			filenames[i] = value.Title
+			// filenames[i] = fmt.Sprint(value.Title, value.FileExtension)
+		}
 
-	// For now, get the first file
-	// TODO: Get selected file
-	// Find fileID
-	searchString := fmt.Sprintf("title contains '%v'", filenames[0])
-	log.Infof(c, "SearchString: %v", searchString)
-	findFile, err := dc.Files.List().Q(searchString).Do()
-	for i, x := range findFile.Items {
-		log.Infof(c, "Files [%v]: %v", i, x.Title)
-	}
-	f, err := dc.Files.Get(findFile.Items[0].Id).Do()
-	if err != nil {
-		log.Errorf(c, "File cannot be found.")
+		// For now, get the first file
+		// TODO: Get selected file
+		// Find fileID
+		searchString := fmt.Sprintf("title contains '%v'", filenames[0])
+		log.Infof(c, "SearchString: %v", searchString)
+		findFile, err := dc.Files.List().Q(searchString).Do()
+		for i, x := range findFile.Items {
+			log.Infof(c, "Files [%v]: %v", i, x.Title)
+		}
+		f, err := dc.Files.Get(findFile.Items[0].Id).Do()
+		if err != nil {
+			log.Errorf(c, "File cannot be found.")
+		} else {
+			log.Infof(c, "FileName: %v", f.OriginalFilename)
+		}
+		downloadUrl := f.DownloadUrl
+		if downloadUrl == "" {
+			// If there is no downloadUrl, there is no body
+			fmt.Printf("An error occurred: File is not downloadable")
+			return
+		}
+		req, err := http.NewRequest("GET", downloadUrl, nil)
+		if err != nil {
+			fmt.Printf("An error occurred: %v\n", err)
+			return
+		}
+
+		resp, err := client.Transport.RoundTrip(req)
+		// Make sure we close the Body later
+		defer resp.Body.Close()
+		if err != nil {
+			fmt.Printf("An error occurred: %v\n", err)
+			return
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Printf("An error occurred: %v\n", err)
+			return
+		}
+
+		graphData = template.JS(formatDataFromString(c, string(body)))
 	} else {
-		log.Infof(c, "FileName: %v", f.OriginalFilename)
+		// No items
+		filenames = make([]string, 1, 1)
+		graphData = template.JS(",")
 	}
-	downloadUrl := f.DownloadUrl
-	if downloadUrl == "" {
-		// If there is no downloadUrl, there is no body
-		fmt.Printf("An error occurred: File is not downloadable")
-		return
-	}
-	req, err := http.NewRequest("GET", downloadUrl, nil)
-	if err != nil {
-		fmt.Printf("An error occurred: %v\n", err)
-		return
-	}
-
-	resp, err := client.Transport.RoundTrip(req)
-	// Make sure we close the Body later
-	defer resp.Body.Close()
-	if err != nil {
-		fmt.Printf("An error occurred: %v\n", err)
-		return
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("An error occurred: %v\n", err)
-		return
-	}
-	// TODO: Change this to do something with the file data!!
-	// log.Infof(c, string(body))
-	graphData := template.JS(formatDataFromString(c, string(body)))
 
 	// User data for display on the webpage
 	data := struct {
@@ -262,4 +271,22 @@ func formatSingleDataLine(c context.Context, s string) string {
 	}
 	// Return empty string for comment or blank line
 	return ""
+}
+
+func handleAbout(w http.ResponseWriter, r *http.Request) {
+
+	err := cached_templates.ExecuteTemplate(w, "about.html", nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+	}
+
+}
+
+func handleContact(w http.ResponseWriter, r *http.Request) {
+
+	err := cached_templates.ExecuteTemplate(w, "contact.html", nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+	}
+
 }
