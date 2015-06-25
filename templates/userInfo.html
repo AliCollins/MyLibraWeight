@@ -1,15 +1,54 @@
 <html>
 
+	<head>
+    <!--Load the AJAX API-->
+    <script type="text/javascript"
+          src="https://www.google.com/jsapi?autoload={
+            'modules':[{
+              'name':'visualization',
+              'version':'1',
+              'packages':['corechart']
+            }]
+          }"></script>
+
+    <script type="text/javascript">
+      google.setOnLoadCallback(drawChart);
+
+      function drawChart() {
+        var data = new google.visualization.DataTable();
+        data.addColumn('datetime', 'Date');
+        data.addColumn('number', 'Weight');
+        data.addColumn('number', ' Weight Trend');
+
+        data.addRows([
+			{{.GraphData}}
+        ]);
+
+        var options = {
+          legend: { position: 'bottom' },
+          explorer: {},
+          point: { visible: true }
+        };
+
+        var chart = new google.visualization.LineChart(document.getElementById('chart'));
+
+        chart.draw(data, options);
+      }
+    </script>
+  </head>
+
 	<body>
-		This app is now authenticated to access your Google user info.  Your name is: {{.DisplayName}}
-		<br />
-		Files:
+		<p>This app is now authenticated to access your Google user info.  Your name is: {{.DisplayName}} and your email address is: {{.Email}}</p>
+		<h2>Files:</h2>
 		<select name="libraFiles">
 			{{range .LibraFiles}}
 				<option>{{.}}</option>
 			{{end}}
 		</select>
-		<input type="submit" value="Process file...">
+		<input type="submit" value="Process file..." disabled />
+		<h2>Chart:</h2>
+		<!--Div that will hold the pie chart-->
+    	<div id="chart" style="width: 1200px; height: 800px"></div>
 	</body>
 
 </html>
