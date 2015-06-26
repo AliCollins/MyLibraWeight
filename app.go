@@ -171,7 +171,10 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 
 	// log.Infof(c, "Files: %v", dc.Files.List().Do())
 	files, err := dc.Files.List().Q("title contains 'Libra Database:'").Do()
-	if len(files.Items) > 0 {
+	if err != nil {
+		log.Errorf(c, "An error occured getting Libra Database files from Drive client: %v", err)
+	}
+	if err == nil && len(files.Items) > 0 {
 		filenames = make([]string, len(files.Items))
 		for i, value := range files.Items {
 			// log.Infof(c, "Files: %v", value.Title)
