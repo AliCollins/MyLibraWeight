@@ -6,6 +6,7 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jws"
 	"google.golang.org/api/drive/v2"
 	"google.golang.org/api/plus/v1"
 	"google.golang.org/appengine"
@@ -91,13 +92,14 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 //
 func handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Initialize an appengine context.
-	// c := appengine.NewContext(r)
+	c := appengine.NewContext(r)
 	// log.Infof(c, "In handleAuthorize")
 
 	// Get the Google URL which shows the Authentication page to the user.
 	// url := conf.AuthCodeURL("state")
-	url := conf.AuthCodeURL("")
-	// log.Infof(c, "Visit the URL for the auth dialog: %v", url)
+	// url := conf.AuthCodeURL("")
+	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline) // Set such that returns refresh token too.
+	log.Infof(c, "Visit the URL for the auth dialog: %v", url)
 
 	// Redirect user to that page.
 	http.Redirect(w, r, url, http.StatusFound)
@@ -125,7 +127,18 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Errorf(c, "%v", err)
 		}
-		// log.Infof(c, "Token: %v", tok)
+		log.Infof(c, "Token: %v", tok)
+
+		// WHAT TO GO HERE?!  Email etc. to come from token information
+		m := tok.Extra("id_token").(string)
+		log.Infof(c, "M: %v", m)
+		cs, err := jws.Decode(m)
+		if err != nil {
+			log.Errorf(c, "JWS Token decode error: %v", err)
+		} else {
+			log.Infof(c, "ClaimSet User #: %v", cs.Sub)
+		}
+		//
 
 		client = conf.Client(c, tok)
 		// log.Infof(c, "Client: %v", client)
@@ -136,7 +149,8 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 			log.Errorf(c, "An error occurred creating Plus client: %v", err)
 		}
 
-		person, err := pc.People.Get("me").Do()
+		// person, err := pc.People.Get("me").Do()
+		person, err := pc.People.Get(cs.Sub).Do()
 		if err != nil {
 			log.Errorf(c, "Person Error: %v", err)
 		}
