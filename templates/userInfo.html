@@ -43,6 +43,10 @@
 		{{template "_navigation"}}
 		<div class="container">
 			<p>This app is now authenticated to access your Google user info.  Your name is: {{.DisplayName}} and your email address is: {{.Email}}</p>
+			<h2>Facebook Authorization:</h2>
+			<form action="/authorizeFacebook" method="POST">
+				<input type="submit" value="Authorize with Facebook..." />
+			</form>
 			<h2>Files:</h2>
 			<select name="libraFiles">
 				{{range .LibraFiles}}

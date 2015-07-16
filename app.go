@@ -2,9 +2,11 @@ package mylibraweight
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/facebook"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jws"
 	"google.golang.org/api/drive/v2"
@@ -66,6 +68,24 @@ var conf = &oauth2.Config{
 // 	Endpoint: google.Endpoint,
 // }
 
+// App Engine instance
+var confFacebook = &oauth2.Config{
+	ClientID:     "854784501254889", // 285312328170-c3rn57hq6bphe1id87p3o2ehhq6ru0g9.apps.googleusercontent.com",
+	ClientSecret: "4289bb536452ff767b47fe644a6e5af9",
+	RedirectURL:  "http://mylibraweight.appspot.com/oauth2callbackFacebook",
+	Scopes:       []string{"email"},
+	Endpoint:     facebook.Endpoint,
+}
+
+// // Debugging on local instance
+// var confFacebook = &oauth2.Config{
+// 	ClientID:     "858462280887111",
+// 	ClientSecret: "c168b5d95acf86788491f38232b98eef",
+// 	RedirectURL:  "http://localhost:10080/oauth2callbackFacebook",
+// 	Scopes:       []string{"email"},
+// 	Endpoint:     facebook.Endpoint,
+// }
+
 // This is the URL that Google has defined so that an authenticated application may obtain the user's info in json format.
 // const profileInfoURL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
 
@@ -77,6 +97,8 @@ func init() {
 	http.HandleFunc("/oauth2callback", handleOAuth2Callback)
 	http.HandleFunc("/about", handleAbout)
 	http.HandleFunc("/contact", handleContact)
+	http.HandleFunc("/authorizeFacebook", handleAuthorizeFacebook)
+	http.HandleFunc("/oauth2callbackFacebook", handleOAuth2CallbackFacebook)
 }
 
 //
@@ -114,62 +136,62 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 
 	var client *http.Client = nil
 
-	if MyUser.Set {
-		// already authorized
-		client = conf.Client(c, MyUser.Token)
+	// if MyUser.Set {
+	// 	// already authorized
+	// 	client = conf.Client(c, MyUser.Token)
 
-	} else {
-		// log.Infof(c, "r: %v", r)
-		code := r.FormValue("code")
-		// log.Infof(c, "Code: %v", code)
+	// } else {
+	// log.Infof(c, "r: %v", r)
+	code := r.FormValue("code")
+	// log.Infof(c, "Code: %v", code)
 
-		tok, err := conf.Exchange(c, code)
-		if err != nil {
-			log.Errorf(c, "%v", err)
-		}
-		log.Infof(c, "Token: %v", tok)
-
-		// WHAT TO GO HERE?!  Email etc. to come from token information
-		m := tok.Extra("id_token").(string)
-		log.Infof(c, "M: %v", m)
-		cs, err := jws.Decode(m)
-		if err != nil {
-			log.Errorf(c, "JWS Token decode error: %v", err)
-		} else {
-			log.Infof(c, "ClaimSet User #: %v", cs.Sub)
-		}
-		//
-
-		client = conf.Client(c, tok)
-		// log.Infof(c, "Client: %v", client)
-
-		// PLUS SERVICE CLIENT
-		pc, err := plus.New(client)
-		if err != nil {
-			log.Errorf(c, "An error occurred creating Plus client: %v", err)
-		}
-
-		// person, err := pc.People.Get("me").Do()
-		person, err := pc.People.Get(cs.Sub).Do()
-		if err != nil {
-			log.Errorf(c, "Person Error: %v", err)
-		}
-		log.Infof(c, "Name: %v", person.DisplayName)
-		// log.Infof(c, "All Person information: %v", person)
-		email := ""
-		for _, e := range person.Emails {
-			log.Infof(c, "Emails: [%v] %v", e.Type, e.Value)
-			if e.Type == "account" {
-				email = e.Value
-			}
-		}
-		log.Infof(c, "Email: %v", email)
-
-		MyUser.Name = person.DisplayName
-		MyUser.Email = email
-		MyUser.Token = tok
-		MyUser.Set = true
+	tok, err := conf.Exchange(c, code)
+	if err != nil {
+		log.Errorf(c, "%v", err)
 	}
+	log.Infof(c, "Token: %v", tok)
+
+	// WHAT TO GO HERE?!  Email etc. to come from token information
+	m := tok.Extra("id_token").(string)
+	log.Infof(c, "M: %v", m)
+	cs, err := jws.Decode(m)
+	if err != nil {
+		log.Errorf(c, "JWS Token decode error: %v", err)
+	} else {
+		log.Infof(c, "ClaimSet User #: %v", cs.Sub)
+	}
+	//
+
+	client = conf.Client(c, tok)
+	// log.Infof(c, "Client: %v", client)
+
+	// PLUS SERVICE CLIENT
+	pc, err := plus.New(client)
+	if err != nil {
+		log.Errorf(c, "An error occurred creating Plus client: %v", err)
+	}
+
+	// person, err := pc.People.Get("me").Do()
+	person, err := pc.People.Get(cs.Sub).Do()
+	if err != nil {
+		log.Errorf(c, "Person Error: %v", err)
+	}
+	log.Infof(c, "Name: %v", person.DisplayName)
+	// log.Infof(c, "All Person information: %v", person)
+	email := ""
+	for _, e := range person.Emails {
+		log.Infof(c, "Emails: [%v] %v", e.Type, e.Value)
+		if e.Type == "account" {
+			email = e.Value
+		}
+	}
+	log.Infof(c, "Email: %v", email)
+
+	MyUser.Name = person.DisplayName
+	MyUser.Email = email
+	MyUser.Token = tok
+	MyUser.Set = true
+	// }
 
 	// user := MyGoogleUser{person.DisplayName, email, tok}
 	// log.Infof(c, "User: %v", user)
@@ -305,5 +327,119 @@ func handleContact(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	}
+
+}
+
+//
+func handleAuthorizeFacebook(w http.ResponseWriter, r *http.Request) {
+	// Initialize an appengine context.
+	c := appengine.NewContext(r)
+	log.Infof(c, "In handleAuthorizeFacebook")
+
+	// Get the Google URL which shows the Authentication page to the user.
+	url := confFacebook.AuthCodeURL("state", oauth2.AccessTypeOffline) // Set such that returns refresh token too.
+	log.Infof(c, "Visit the Facebook URL for the auth dialog: %v", url)
+
+	// Redirect user to that page.
+	http.Redirect(w, r, url, http.StatusFound)
+	log.Infof(c, "Leaving handleAuthorizeFacebook")
+}
+
+func handleOAuth2CallbackFacebook(w http.ResponseWriter, r *http.Request) {
+	// Initialize an appengine context.
+	c := appengine.NewContext(r)
+	// log.Infof(c, "In handleOAuth2CallbackFacebook")
+
+	var client *http.Client = nil
+
+	code := r.FormValue("code")
+	// log.Infof(c, "Code: %v", code)
+
+	tok, err := confFacebook.Exchange(c, code)
+	if err != nil {
+		log.Errorf(c, "%v", err)
+	}
+	log.Infof(c, "Facebook Token: %v", tok)
+
+	// // WHAT TO GO HERE?!  Email etc. to come from token information
+	// m := tok.Extra("id_token").(string)
+	// log.Infof(c, "M: %v", m)
+	// cs, err := jws.Decode(m)
+	// if err != nil {
+	// 	log.Errorf(c, "JWS Token decode error (Facebook): %v", err)
+	// } else {
+	// 	log.Infof(c, "Facebook Sub: %v", cs.Sub)
+	// 	log.Infof(c, "Facebook Iss: %v", cs.Iss)
+	// 	log.Infof(c, "Facebook Aud: %v", cs.Aud)
+	// 	log.Infof(c, "Facebook Prn: %v", cs.Prn)
+	// 	log.Infof(c, "Facebook Scope: %v", cs.Scope)
+	// 	log.Infof(c, "Facebook Typ: %v", cs.Typ)
+	// }
+
+	client = confFacebook.Client(c, tok)
+	// log.Infof(c, "Client: %v", client)
+
+	response, err := client.Get("https://graph.facebook.com/me?access_token=" + tok.AccessToken)
+	if err != nil {
+		log.Errorf(c, "Error from Facebook authentication: %v", err)
+	}
+
+	str := readHttpBody(response)
+	log.Infof(c, "Facebook Response: %v", str)
+
+	// buf := make([]byte, 1024)
+	// responseLen, _ := response.Body.Read(buf)
+
+	// buf = buf[:responseLen]
+
+	res := FacebookResponse{}
+	err = json.Unmarshal([]byte(str), &res)
+	if err != nil {
+		log.Errorf(c, "Error from Facebook Unmarshalling: %v", err)
+	}
+
+	data := struct {
+		DisplayName string
+		Email       string
+	}{
+		DisplayName: fmt.Sprint(res.FirstName, " ", res.LastName),
+		Email:       res.Email,
+	}
+
+	err = cached_templates.ExecuteTemplate(w, "faceAuth.html", data)
+}
+
+// https://www.socketloop.com/tutorials/golang-login-authenticate-with-facebook-example
+
+type FacebookResponse struct {
+	Id            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified"`
+	FirstName     string `json:"first_name"`
+	LastName      string `json:"last_name"`
+	Link          string `json:"link"`
+	Picture       string `json:"picture"`
+	Gender        string `json:"gender"`
+}
+
+func readHttpBody(response *http.Response) string {
+
+	// fmt.Println("Reading body")
+
+	bodyBuffer := make([]byte, 5000)
+	var str string
+
+	count, err := response.Body.Read(bodyBuffer)
+
+	for ; count > 0; count, err = response.Body.Read(bodyBuffer) {
+
+		if err != nil {
+
+		}
+
+		str += string(bodyBuffer[:count])
+	}
+
+	return str
 
 }
