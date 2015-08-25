@@ -2,6 +2,8 @@ package mylibraweight
 
 import (
 	"bufio"
+	"code.google.com/p/gorilla/sessions"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
@@ -22,11 +24,8 @@ import (
 // Cache all of the HTML files in the templates directory so that we only have to hit disk once.
 var cached_templates = template.Must(template.ParseGlob("templates/*.html"))
 
-// type MyGoogleUser struct {
-// 	Name  string
-// 	Email string
-// 	// token *oauth2.Token
-// }
+// Cookie store
+var store sessions.Store
 
 type MyGoogleUser struct {
 	Name  string
@@ -55,9 +54,18 @@ var conf = &oauth2.Config{
 	Endpoint: google.Endpoint,
 }
 
-// // Debugging on local instance
+// App Engine instance
+var confFacebook = &oauth2.Config{
+	ClientID:     "854784501254889", // 285312328170-c3rn57hq6bphe1id87p3o2ehhq6ru0g9.apps.googleusercontent.com",
+	ClientSecret: "4289bb536452ff767b47fe644a6e5af9",
+	RedirectURL:  "http://mylibraweight.appspot.com/oauth2callbackFacebook",
+	Scopes:       []string{"email"},
+	Endpoint:     facebook.Endpoint,
+}
+
+// // Debugging on local instance - Run local instance as goapp serve -port 10080
 // var conf = &oauth2.Config{
-// 	ClientID:     "285312328170-7dvm2p1sa9tnfpfblopuk4eqp0r80jvl.apps.googleusercontent.com", // from https://console.developers.google.com/project/<your-project-id>/apiui/credential
+// 	ClientID:     "285312328170-7dvm2p1sa9tnfpfblopuk4eqp0r80jvl.apps.googleusercontent.com",
 // 	ClientSecret: "-qW7bzzoddgeXOIo-G-4H_4K",
 // 	RedirectURL:  "http://localhost:10080/oauth2callback",
 // 	Scopes: []string{
@@ -67,15 +75,6 @@ var conf = &oauth2.Config{
 // 	},
 // 	Endpoint: google.Endpoint,
 // }
-
-// App Engine instance
-var confFacebook = &oauth2.Config{
-	ClientID:     "854784501254889", // 285312328170-c3rn57hq6bphe1id87p3o2ehhq6ru0g9.apps.googleusercontent.com",
-	ClientSecret: "4289bb536452ff767b47fe644a6e5af9",
-	RedirectURL:  "http://mylibraweight.appspot.com/oauth2callbackFacebook",
-	Scopes:       []string{"email"},
-	Endpoint:     facebook.Endpoint,
-}
 
 // // Debugging on local instance
 // var confFacebook = &oauth2.Config{
@@ -99,16 +98,32 @@ func init() {
 	http.HandleFunc("/contact", handleContact)
 	http.HandleFunc("/authorizeFacebook", handleAuthorizeFacebook)
 	http.HandleFunc("/oauth2callbackFacebook", handleOAuth2CallbackFacebook)
+
+	// store = sessions.NewCookieStore([]byte(os.Getenv("KEY")))
+	store = sessions.NewCookieStore([]byte("MyVeryPrivateString"))
+	gob.Register(&MyGoogleUser{})
 }
 
 //
 func handleRoot(w http.ResponseWriter, r *http.Request) {
+	// Initialize an appengine context.
+	c := appengine.NewContext(r)
 
-	err := cached_templates.ExecuteTemplate(w, "notAuthenticated.html", nil)
+	// Get session
+	session, err := store.Get(r, "session-name")
+	if err != nil {
+		log.Errorf(c, "Session Error in handleRoot: %v (%s)", err.Error(), session.Name())
+		return
+	}
+	// Retrieve our MyGoogleUser struct and type-assert it.  If it is valid, skip the Root page and go to UserInfo page.
+	// if mGU, ok := session.Values["user"].(*MyGoogleUser); ok && mGU.Set && mGU.Token.Valid() {
+	// 	handleOAuth2Callback(w, r)
+	// } else {
+	err = cached_templates.ExecuteTemplate(w, "notAuthenticated.html", nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	}
-
+	// }
 }
 
 //
@@ -136,65 +151,86 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 
 	var client *http.Client = nil
 
-	// if MyUser.Set {
-	// 	// already authorized
-	// 	client = conf.Client(c, MyUser.Token)
-
-	// } else {
-	// log.Infof(c, "r: %v", r)
-	code := r.FormValue("code")
-	// log.Infof(c, "Code: %v", code)
-
-	tok, err := conf.Exchange(c, code)
+	// Get session
+	session, err := store.Get(r, "session-name")
 	if err != nil {
-		log.Errorf(c, "%v", err)
-	}
-	log.Infof(c, "Token: %v", tok)
-
-	// WHAT TO GO HERE?!  Email etc. to come from token information
-	m := tok.Extra("id_token").(string)
-	log.Infof(c, "M: %v", m)
-	cs, err := jws.Decode(m)
-	if err != nil {
-		log.Errorf(c, "JWS Token decode error: %v", err)
-	} else {
-		log.Infof(c, "ClaimSet User #: %v", cs.Sub)
-	}
-	//
-
-	client = conf.Client(c, tok)
-	// log.Infof(c, "Client: %v", client)
-
-	// PLUS SERVICE CLIENT
-	pc, err := plus.New(client)
-	if err != nil {
-		log.Errorf(c, "An error occurred creating Plus client: %v", err)
+		log.Errorf(c, "Session Error in handleOAuth2Callback: %v", err.Error())
+		return
 	}
 
-	// person, err := pc.People.Get("me").Do()
-	person, err := pc.People.Get(cs.Sub).Do()
-	if err != nil {
-		log.Errorf(c, "Person Error: %v", err)
-	}
-	log.Infof(c, "Name: %v", person.DisplayName)
-	// log.Infof(c, "All Person information: %v", person)
-	email := ""
-	for _, e := range person.Emails {
-		log.Infof(c, "Emails: [%v] %v", e.Type, e.Value)
-		if e.Type == "account" {
-			email = e.Value
+	// Retrieve our struct and type-assert it
+	if mGU, ok := session.Values["user"].(*MyGoogleUser); ok {
+		// log.Infof(c, "MyGoogleUser in handleOAuth2Callback - Email: %v", mGU.Email)
+		if mGU.Set {
+			// Use the user stored in session
+			MyUser = *mGU
+			log.Infof(c, "handleOAuth2Callback - Session User: %v (%v)", MyUser.Name, MyUser.Email)
+			// Check if token has expired
+			if !MyUser.Token.Valid() {
+				// Refresh token
+				code := r.FormValue("code")
+				tok, err := conf.Exchange(c, code)
+				if err != nil {
+					log.Errorf(c, "%v", err)
+				}
+				MyUser.Token = tok
+				session.Values["user"] = MyUser
+				session.Save(r, w)
+			}
+			client = conf.Client(c, MyUser.Token)
 		}
+	} else {
+		// Login user by getting token from response
+		code := r.FormValue("code")
+		tok, err := conf.Exchange(c, code)
+		if err != nil {
+			log.Errorf(c, "%v", err)
+		}
+		// log.Infof(c, "Token: %v", tok)
+
+		// Email etc. to come from token information
+		m := tok.Extra("id_token").(string)
+		// log.Infof(c, "M: %v", m)
+		cs, err := jws.Decode(m)
+		if err != nil {
+			log.Errorf(c, "JWS Token decode error: %v", err)
+		} else {
+			// log.Infof(c, "ClaimSet User #: %v", cs.Sub)
+		}
+
+		client = conf.Client(c, tok)
+		// log.Infof(c, "Client: %v", client)
+
+		// PLUS SERVICE CLIENT
+		pc, err := plus.New(client)
+		if err != nil {
+			log.Errorf(c, "An error occurred creating Plus client: %v", err)
+		}
+
+		// person, err := pc.People.Get("me").Do()
+		person, err := pc.People.Get(cs.Sub).Do()
+		if err != nil {
+			log.Errorf(c, "Person Error: %v", err)
+		}
+		// log.Infof(c, "Name: %v", person.DisplayName)
+		// log.Infof(c, "All Person information: %v", person)
+		email := ""
+		for _, e := range person.Emails {
+			// log.Infof(c, "Emails: [%v] %v", e.Type, e.Value)
+			if e.Type == "account" {
+				email = e.Value
+			}
+		}
+		// log.Infof(c, "Email: %v", email)
+
+		MyUser.Name = person.DisplayName
+		MyUser.Email = email
+		MyUser.Token = tok
+		MyUser.Set = true
+
+		session.Values["user"] = MyUser
+		session.Save(r, w)
 	}
-	log.Infof(c, "Email: %v", email)
-
-	MyUser.Name = person.DisplayName
-	MyUser.Email = email
-	MyUser.Token = tok
-	MyUser.Set = true
-	// }
-
-	// user := MyGoogleUser{person.DisplayName, email, tok}
-	// log.Infof(c, "User: %v", user)
 
 	// DRIVE CLIENT
 	dc, err := drive.New(client)
@@ -222,16 +258,16 @@ func handleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 		// TODO: Get selected file
 		// Find fileID
 		searchString := fmt.Sprintf("title contains '%v'", filenames[0])
-		log.Infof(c, "SearchString: %v", searchString)
+		// log.Infof(c, "SearchString: %v", searchString)
 		findFile, err := dc.Files.List().Q(searchString).Do()
-		for i, x := range findFile.Items {
-			log.Infof(c, "Files [%v]: %v", i, x.Title)
-		}
+		// for i, x := range findFile.Items {
+		// 	log.Infof(c, "Files [%v]: %v", i, x.Title)
+		// }
 		f, err := dc.Files.Get(findFile.Items[0].Id).Do()
 		if err != nil {
 			log.Errorf(c, "File cannot be found.")
 		} else {
-			log.Infof(c, "FileName: %v", f.OriginalFilename)
+			// log.Infof(c, "FileName: %v", f.OriginalFilename)
 		}
 		downloadUrl := f.DownloadUrl
 		if downloadUrl == "" {
